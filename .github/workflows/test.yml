@@ -1,0 +1,62 @@
+name: CI Pipeline
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        go-version:
+          - stable
+          - oldstable
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go-version }}
+          cache: ${{ hashFiles('go.mod') != '' && 'true' || 'false' }}
+
+      - name: Install dependencies
+        if: hashFiles('go.mod') != ''
+        run: go mod download
+
+      - name: Lint and format check
+        if: hashFiles('go.mod') != ''
+        run: |
+          go vet ./...
+          test -z "$(gofmt -l .)" || (echo "gofmt found unformatted files"; exit 1)
+
+      - name: Build
+        if: hashFiles('go.mod') != ''
+        run: go build ./...
+
+      - name: Unit and integration tests
+        if: hashFiles('go.mod') != ''
+        run: go test ./... -race -count=1
+
+      - name: Pipeline summary
+        if: always()
+        run: |
+          echo "| Step | Outcome |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|------|---------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Checkout | ${{ steps.checkout.outcome }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Set up Go | ${{ steps.setup-go.outcome }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Install dependencies | ${{ steps.install-deps.outcome }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Lint and format | ${{ steps.lint-format.outcome }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Build | ${{ steps.build.outcome }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Tests | ${{ steps.tests.outcome }} |" >> "$GITHUB_STEP_SUMMARY"
